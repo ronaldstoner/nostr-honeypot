@@ -7,14 +7,34 @@
     "002": {
         "description": "Possible SQL Injection",
         "weight": 5,
-        "regex": "\b(ALTER|CREATE|DELETE|DROP|EXEC(UTE){0,1}|INSERT( +INTO){0,1}|MERGE|SELECT|UPDATE|UNION( +ALL){0,1})\b"
+        "regex": "/(\\%27)|(\\')|(\\-\\-)|(\\%23)|(#)/ix"
     },
     "003": {
-        "description": "Possible Cross Site Scripting (XSS)",
+        "description": "Possible SQL Injection (Blind)",
         "weight": 5,
-        "regex": "<[^>]{2,}[^/]>"
+        "regex": "(\\w+\\s*?(SLEEP|BENCHMARK|WAITFOR)\\s*?\\(\\s*?[\\d,]+\\s*?\\))"
     },
     "004": {
+        "description": "Possible SQL Injection (Union)",
+        "weight": 5,
+        "regex": "(?i)UNION\\s+SELECT"
+    },
+    "005": {
+        "description": "Possible SQL Injection (MS-SQL)",
+        "weight": 5,
+        "regex": "(?i)exec(\\s|\\+)+(s|x)p\\w+"
+    },
+    "006": {
+        "description": "Possible Cross Site Scripting (XSS)",
+        "weight": 5,
+        "regex": "(<|<)(\\s|\/)*script(\\s|>|>)"
+    },
+    "007": {
+        "description": "PHP File Inclusion",
+        "weight": 5,
+        "regex": "(include|require)(_once)?\\s*\\(\\s*[\"']?([^\"'\\n]+?)[\"']?\\s*\\)"
+},
+    "999": {
         "description": "Example of another rule entry",
         "weight": 5,
         "regex": "RegexExpToMatchOn"
