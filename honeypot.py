@@ -5,15 +5,40 @@
 #
 # NOTE: This script is a work in progress.
 
-version = "0.1.1"
+version = "0.1.2"
 
 import asyncio
 import json
-import time
+import re
 import websockets
+from collections import defaultdict
 
-event_data = {}  # a dictionary to store event data
+event_data = {}     # dictionary to store event data
+ip_scores = defaultdict(int)      # dictionary to store scores by IP
+violated_rules = defaultdict(int)
 
+# Load honeypot rules from json file
+with open(r"rules.json") as f:
+    rules = json.load(f)
+
+# Check and add event score and set 0 if none
+def check_event(event):
+    event_score = 0
+    for rule_id, rule in rules.items():
+        if rule['regex']:
+            event_content = json.dumps(event)
+            if re.search(rule['regex'], event_content):
+                event_score += rule['weight']
+                print(f"[ALERT] Rule violated!\n{rule_id} - {rule}")
+    return event_score
+
+# On Connection
+def on_connect(websocket, path):
+    print(f"Client connected from {websocket.remote_address[0]}")
+    #print("Websocket headers:\n", websocket.request_headers)
+    return handle_connection(websocket, path)
+
+# Connection Handler
 async def handle_connection(websocket, path):
     try:
         while True:
@@ -21,88 +46,65 @@ async def handle_connection(websocket, path):
             data = json.loads(raw_data)
 
             # Log the IP address, request, and content
-            #print("Received request from IP:", websocket.remote_address[0])
-            #print("Raw Data:", raw_data)
+            client_ip = websocket.remote_address[0]
+            print(f"Received request from IP: {client_ip}")
+            print("Raw Data:", raw_data)
 
             if data[0] == "EVENT":
-                
-                # Store the event data
-                event_data[data[1]['id']] = data
-                #print(f'Stored event data for id: {data[1]["id"]}')
-                print(f"Received EVENT request from IP: {websocket.remote_address[0]}")
-                
-                # Check for SQL injection attempts
-                if 'content' in data[1]:
-                    #print("Content:", data[1]["content"])
-                    if any(x in data[1]['content'] for x in ['SELECT', 'UPDATE', 'INSERT', 'DELETE', 'DROP']):
-                        print(f"\n[ALERT!] Possible SQL injection attempt detected from {websocket.remote_address[0]}")
-                        print(f'Message contents:\n    {data[1]["content"]}\n')
-                
-                # Check for Cross Site Scripting (XSS)
-                if 'content' in data[1]:
-                    #print("Content:", data[1]["content"])
-                    if any(x in data[1]['content'] for x in ['<script>', 'on*=', '<iframe>', '<object>', '<embed>']):
-                        print(f"\n[ALERT!] Possible XSS cross site scripting attempt detected from {websocket.remote_address[0]}")
-                        print(f'Message contents:\n    {data[1]["content"]}\n')
+                event = data[1]
+                print("event: ", event)
+                event_id = event['id']
+                event_data[event_id] = event
+                event_score = check_event(json.dumps(event))
+                ip_scores[client_ip] += event_score
+                if event_score > 0:
+                    print(f"[ALERT] IP: {websocket.remote_address[0]} has a score of {event_score}")
+                else:
+                    print(f"IP: {websocket.remote_address[0]} has a score of {event_score}")
 
-                # Send OK message - NIP-20
-                #["OK", <event_id>, <true|false>, <message>]
-                event_id = data[1]['id']
-                #print("event id:", event_id)
-                ok_message = ["OK", event_id, True, "test"]
-                #print("raw response:", ok_message)
+                # Send OK message
+                ok_message = ["OK", event_id, True, "Event accepted"]
                 try:
                     await websocket.send(json.dumps(ok_message))
-                    #print("Event OK sent")
                 except:
                     print("Error sending OK back")
 
-            # REQ
             if data[0] == 'REQ':
-                # Extract the id of the requested event
-                event_id = data[2]['ids'][0]
-                #print(event_id)
-
-                # Extract the subscription ID
                 subscription_id = data[1]
-                #print("Sub: ", subscription_id)
-
-                # Retrieve the event data from the dictionary
-                event = event_data.get(event_id)
-                if event:
-                    # Send the event data along with the subscription ID as a response
-                    response = ["EVENT", subscription_id, event[1]]
-                    #print("Sending back", response)
-                    try:
-                        await websocket.send(json.dumps(response))
-                        #print("Response sent")
-                    except:
-                        print("error sending back")
-                else:
-                    # Send a response indicating that the event could not be found
-                    response = ["EVENT", subscription_id, {"status": "Error", "message": "Event not found"}]
+                if 'ids' in data[2]:
+                    event_id = data[2]['ids'][0]
+                    event = event_data.get(event_id)
+                    if event:
+                        response = ["EVENT", subscription_id, event]
+                        try:
+                            await websocket.send(json.dumps(response))
+                            print("Response sent")
+                        except:
+                            print("Error sending back")
+                    else:
+                        response = ["OK", subscription_id, False, "Error: Event not found"]
+                        try:
+                            await websocket.send(json.dumps(response))
+                            print("Response sent")
+                        except:
+                            print("Error sending back")
 
     except websockets.exceptions.ConnectionClosedError:
-        pass
-        #print(f"Connection closed by remote client {websocket.remote_address[0]}")
+        print(f"Connection closed by remote client {client_ip}")
     except Exception as e:
         print("Error:", e)
-
-def on_connect(websocket, path):
-    print(f"Client connected from {websocket.remote_address[0]}")
-    #print("Websocket headers:\n", websocket.request_headers)
-    return handle_connection(websocket, path)
 
 if __name__ == '__main__':
     port = 8080   # specify the port you want the honeypot to listen on
     start_server = websockets.serve(on_connect, '0.0.0.0', port)
     print(f"\nHoneypot relay is listening on 0.0.0.0:{port}")
+
     asyncio.get_event_loop().run_until_complete(start_server)
     while True:
         try:
             asyncio.get_event_loop().run_forever()
         except KeyboardInterrupt:
-            print("Server interrupted. Gracefully closing connections.")
-            start_server.ws_server.close()
-            asyncio.get_event_loop().stop()
+            print("\nTally of IP scores:")
+            for ip, score in ip_scores.items():
+                print(f"{ip}: {score}")
             break

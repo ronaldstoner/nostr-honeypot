@@ -1,18 +1,18 @@
 {
     "001": {
         "description": "Malformed/Bad Event Signature",
-        "weight": 10
-        "regex": ""
+        "weight": 10,
+        "regex": "System Rule - No RegEx"
     },
     "002": {
         "description": "Possible SQL Injection",
         "weight": 5,
-        "regex": ""
+        "regex": "\b(ALTER|CREATE|DELETE|DROP|EXEC(UTE){0,1}|INSERT( +INTO){0,1}|MERGE|SELECT|UPDATE|UNION( +ALL){0,1})\b"
     },
     "003": {
         "description": "Possible Cross Site Scripting (XSS)",
         "weight": 5,
-        "regex": ""
+        "regex": "<[^>]{2,}[^/]>"
     },
     "004": {
         "description": "Example of another rule entry",
