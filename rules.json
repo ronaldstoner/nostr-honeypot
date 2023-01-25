@@ -1,0 +1,22 @@
+{
+    "001": {
+        "description": "Malformed/Bad Event Signature",
+        "weight": 10
+        "regex": ""
+    },
+    "002": {
+        "description": "Possible SQL Injection",
+        "weight": 5,
+        "regex": ""
+    },
+    "003": {
+        "description": "Possible Cross Site Scripting (XSS)",
+        "weight": 5,
+        "regex": ""
+    },
+    "004": {
+        "description": "Example of another rule entry",
+        "weight": 5,
+        "regex": "RegexExpToMatchOn"
+    }
+}
