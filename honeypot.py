@@ -22,14 +22,14 @@ with open(r"rules.json") as f:
     rules = json.load(f)
 
 # Check and add event score and set 0 if none
-def check_event(event):
+def check_event(event_content, client_ip):
     event_score = 0
     for rule_id, rule in rules.items():
         if rule['regex']:
-            event_content = json.dumps(event)
             if re.search(rule['regex'], event_content):
                 event_score += rule['weight']
-                print(f"[ALERT] Rule violated!\n{rule_id} - {rule}")
+                violated_rules[rule_id] += 1
+                print(f"\n - [ALERT] Rule {rule_id} detected - {rule['description']}\n   {client_ip} - Total Score: {ip_scores[client_ip]}\n   Offending Event Content: {json.loads(event_content)['content']}\n")
     return event_score
 
 # On Connection
@@ -47,20 +47,20 @@ async def handle_connection(websocket, path):
 
             # Log the IP address, request, and content
             client_ip = websocket.remote_address[0]
-            print(f"Received request from IP: {client_ip}")
-            print("Raw Data:", raw_data)
+            #print(f"Received request from IP: {client_ip}")
+            #print("Raw Data:", raw_data)
 
             if data[0] == "EVENT":
                 event = data[1]
-                print("event: ", event)
+                #print("event: ", event)
                 event_id = event['id']
                 event_data[event_id] = event
-                event_score = check_event(json.dumps(event))
+                event_score = check_event(json.dumps(event), client_ip)
                 ip_scores[client_ip] += event_score
-                if event_score > 0:
-                    print(f"[ALERT] IP: {websocket.remote_address[0]} has a score of {event_score}")
-                else:
-                    print(f"IP: {websocket.remote_address[0]} has a score of {event_score}")
+                #if event_score > 0:
+                    #print(f"[ALERT] IP: {websocket.remote_address[0]} has a score of {event_score}")
+                #else:
+                #    print(f"IP: {websocket.remote_address[0]} has a score of {event_score}")
 
                 # Send OK message
                 ok_message = ["OK", event_id, True, "Event accepted"]
@@ -78,14 +78,14 @@ async def handle_connection(websocket, path):
                         response = ["EVENT", subscription_id, event]
                         try:
                             await websocket.send(json.dumps(response))
-                            print("Response sent")
+                            #print("Response sent")
                         except:
                             print("Error sending back")
                     else:
                         response = ["OK", subscription_id, False, "Error: Event not found"]
                         try:
                             await websocket.send(json.dumps(response))
-                            print("Response sent")
+                            #print("Response sent")
                         except:
                             print("Error sending back")
 
