@@ -29,7 +29,8 @@ def check_event(event_content, client_ip):
             if re.search(rule['regex'], event_content):
                 event_score += rule['weight']
                 violated_rules[rule_id] += 1
-                print(f"\n - [ALERT] Rule {rule_id} detected - {rule['description']}\n   {client_ip} - Total Score: {ip_scores[client_ip]}\n   Offending Event Content: {json.loads(event_content)['content']}\n")
+                print(f"\n - [ALERT] Rule {rule_id} - {rule['description']}\n   {client_ip} - Total Score: {ip_scores[client_ip] + event_score}\n   Offending Event Content: {json.loads(event_content)['content']}\n")
+    ip_scores[client_ip] += event_score
     return event_score
 
 # On Connection
@@ -56,11 +57,6 @@ async def handle_connection(websocket, path):
                 event_id = event['id']
                 event_data[event_id] = event
                 event_score = check_event(json.dumps(event), client_ip)
-                ip_scores[client_ip] += event_score
-                #if event_score > 0:
-                    #print(f"[ALERT] IP: {websocket.remote_address[0]} has a score of {event_score}")
-                #else:
-                #    print(f"IP: {websocket.remote_address[0]} has a score of {event_score}")
 
                 # Send OK message
                 ok_message = ["OK", event_id, True, "Event accepted"]
