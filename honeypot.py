@@ -5,9 +5,10 @@
 #
 # NOTE: This script is a work in progress.
 
-version = "0.1.3"
+version = "0.1.3.1"
 
 import asyncio
+import datetime
 import json
 import re
 import websockets
@@ -29,6 +30,8 @@ try:
 except:
     print("Could not connect to mongodb. Exiting.")
 events_collection = db["events"]
+pubkeys_collection = db["pubkeys"]
+
 
 # Check and add event score and set 0 if none
 def check_event(event_content, client_ip):
@@ -59,10 +62,24 @@ async def handle_connection(websocket, path):
             client_ip = websocket.remote_address[0]
             print(f"Received request from IP: {client_ip}")
             print("Raw Data:", raw_data)
+            
+            # Check if the pubkey exists in the pubkeys table
+            pubkey = None
+            if 'pubkey' in data[1]:
+                print("pubkey found")
+                pubkey = data[1]['pubkey']
+                pubkey_record = pubkeys_collection.find_one({'pubkey': pubkey})
+                if pubkey_record:
+                    # Update the last_seen field
+                    pubkeys_collection.update_one({'pubkey': pubkey}, {'$set': {'last_seen': datetime.datetime.now()}})
+                else:
+                    # Add the pubkey to the pubkeys table
+                    pubkeys_collection.insert_one({'pubkey': pubkey, 'ip_address': client_ip, 'last_seen': datetime.datetime.now()})
+
 
             if data[0] == "EVENT":
                 event = data[1]
-                #print("event: ", event)
+                print("event: ", event)
                 event_id = event['id']
                 event_data[event_id] = event
                 event_score = check_event(json.dumps(event), client_ip)
@@ -72,7 +89,14 @@ async def handle_connection(websocket, path):
                     events_collection.insert_one(event)
                     print("Event written to mongodb.")
                 except:
-                    print("Could not write to mongodb. Exiting")
+                    #["OK", "b1a649ebe8...", false, "error: could not connect to the database"]
+                    response = ["OK", event_id, False, "error: could not write event to database"]
+                    try:
+                        await websocket.send(json.dumps(response))
+                        print("DB Failed Response sent")
+                    except:
+                        print("Error sending db fail back")
+                    print("Could not write to mongodb")
                     break
 
                 # Send OK message
@@ -85,11 +109,22 @@ async def handle_connection(websocket, path):
                     print("Error sending OK back")
 
             if data[0] == 'REQ':
+                print("REQ receieved:", data)
                 subscription_id = data[1]
-                if 'ids' in data[2]:
-                    event_id = data[2]['ids'][0]
-                    #event = event_data.get(event_id)
 
+                event_id = None
+                kinds = []
+
+                for d in data[2:]:
+                    if 'ids' in d:
+                        event_id = d['ids'][0]
+                        print("ID found:", event_id)
+                    if 'kinds' in d:
+                        kinds.extend(d['kinds'])
+                        print("KINDs found:", kinds)
+
+                if event_id is not None:
+                    print(event_id)
                     # Search for the event in MongoDB
                     event = events_collection.find_one({"id": event_id}, { "_id": 0 })
                     
@@ -99,6 +134,7 @@ async def handle_connection(websocket, path):
                         print("RESPONSE: ", response)
                         try:
                             await websocket.send(json.dumps(response))
+                            # NIP-15 - End of Stored Events Notice
                             response = ["EOSE", subscription_id]
                             print("EOSE: ", response)
                             await websocket.send(json.dumps(response))
@@ -106,13 +142,36 @@ async def handle_connection(websocket, path):
                         except:
                             print("Error sending event response back")
                     else:
-                        #response = ["OK", subscription_id, False, "Error: Event not found"]
                         response = ["EOSE", subscription_id]
                         try:
                             await websocket.send(json.dumps(response))
                             print("False Response sent")
                         except:
                             print("Error sending false back")
+
+                for kind in kinds:
+                    if kind == 0:
+                        print("Metadata update")
+
+                    if kind == 1:
+                        response = ["OK", subscription_id, True, ""]
+                        try:
+                            await websocket.send(json.dumps(response))
+                            print("OK response sent")
+                        except:
+                            print("Error sending OK response")
+
+                    if kind == 2:
+                        print("Relay server recommendation")
+
+                    if kind == 3:
+                        # Handle kind 3
+                        print("Kind 3")
+
+                    if kind == 4:
+                        # Handle kind 4
+                        print("Kind 4")
+
     except websockets.exceptions.ConnectionClosedError:
         print(f"Connection closed by remote client {client_ip}")
     except Exception as e:
