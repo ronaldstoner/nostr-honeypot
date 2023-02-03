@@ -5,13 +5,14 @@
 #
 # NOTE: This script is a work in progress.
 
-version = "0.1.2"
+version = "0.1.3"
 
 import asyncio
 import json
 import re
 import websockets
 from collections import defaultdict
+from pymongo import MongoClient
 
 event_data = {}     # dictionary to store event data
 ip_scores = defaultdict(int)      # dictionary to store scores by IP
@@ -20,6 +21,14 @@ violated_rules = defaultdict(int)
 # Load honeypot rules from json file
 with open(r"rules.json") as f:
     rules = json.load(f)
+
+# Connect to MongoDB
+client = MongoClient("mongodb://localhost:27017/")
+try:
+    db = client["relay"]
+except:
+    print("Could not connect to mongodb. Exiting.")
+events_collection = db["events"]
 
 # Check and add event score and set 0 if none
 def check_event(event_content, client_ip):
@@ -48,8 +57,8 @@ async def handle_connection(websocket, path):
 
             # Log the IP address, request, and content
             client_ip = websocket.remote_address[0]
-            #print(f"Received request from IP: {client_ip}")
-            #print("Raw Data:", raw_data)
+            print(f"Received request from IP: {client_ip}")
+            print("Raw Data:", raw_data)
 
             if data[0] == "EVENT":
                 event = data[1]
@@ -58,10 +67,20 @@ async def handle_connection(websocket, path):
                 event_data[event_id] = event
                 event_score = check_event(json.dumps(event), client_ip)
 
-                # Send OK message
-                ok_message = ["OK", event_id, True, "Event accepted"]
+                # Store event in MongoDB
                 try:
-                    await websocket.send(json.dumps(ok_message))
+                    events_collection.insert_one(event)
+                    print("Event written to mongodb.")
+                except:
+                    print("Could not write to mongodb. Exiting")
+                    break
+
+                # Send OK message
+                ok_message = ["OK", event_id, True, ""]
+                try:
+                    await websocket.send(json.dumps(ok_message))    
+                    print("OK Message: ", ok_message)
+                    print("Sent OK message back")
                 except:
                     print("Error sending OK back")
 
@@ -69,29 +88,38 @@ async def handle_connection(websocket, path):
                 subscription_id = data[1]
                 if 'ids' in data[2]:
                     event_id = data[2]['ids'][0]
-                    event = event_data.get(event_id)
+                    #event = event_data.get(event_id)
+
+                    # Search for the event in MongoDB
+                    event = events_collection.find_one({"id": event_id}, { "_id": 0 })
+                    
+                    # If the event exists, send its contents back to the client
                     if event:
                         response = ["EVENT", subscription_id, event]
+                        print("RESPONSE: ", response)
                         try:
                             await websocket.send(json.dumps(response))
-                            #print("Response sent")
+                            response = ["EOSE", subscription_id]
+                            print("EOSE: ", response)
+                            await websocket.send(json.dumps(response))
+                            print("Found Response sent")
                         except:
-                            print("Error sending back")
+                            print("Error sending event response back")
                     else:
-                        response = ["OK", subscription_id, False, "Error: Event not found"]
+                        #response = ["OK", subscription_id, False, "Error: Event not found"]
+                        response = ["EOSE", subscription_id]
                         try:
                             await websocket.send(json.dumps(response))
-                            #print("Response sent")
+                            print("False Response sent")
                         except:
-                            print("Error sending back")
-
+                            print("Error sending false back")
     except websockets.exceptions.ConnectionClosedError:
         print(f"Connection closed by remote client {client_ip}")
     except Exception as e:
         print("Error:", e)
 
 if __name__ == '__main__':
-    port = 8080   # specify the port you want the honeypot to listen on
+    port = 8080 # specify the port you want the honeypot to listen on
     start_server = websockets.serve(on_connect, '0.0.0.0', port)
     print(f"\nHoneypot relay is listening on 0.0.0.0:{port}")
 
