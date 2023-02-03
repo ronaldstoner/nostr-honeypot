@@ -1,4 +1,9 @@
 {
+    "EXAMPLE": {
+        "description": "Example of another rule entry",
+        "weight": 5,
+        "regex": "RegexExpToMatchOn"
+    },
     "001": {
         "description": "Malformed/Bad Event Signature",
         "weight": 10,
@@ -33,10 +38,5 @@
         "description": "PHP File Inclusion",
         "weight": 5,
         "regex": "(include|require)(_once)?\\s*\\(\\s*[\"']?([^\"'\\n]+?)[\"']?\\s*\\)"
-},
-    "999": {
-        "description": "Example of another rule entry",
-        "weight": 5,
-        "regex": "RegexExpToMatchOn"
     }
 }
